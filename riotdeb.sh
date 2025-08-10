@@ -2,8 +2,8 @@
 
 sudo clear
 
-# apt install xfce4-terminal sudo nala git wget 
-apt install sudo nala git wget 
+apt install tilix sudo nala git wget 
+
 sudo apt install -y acpi acpitool acpi-support rename blueman fancontrol firmware-linux-free fwupd hardinfo hwdata hwinfo irqbalance iucode-tool laptop-detect numlockx gvfs-backends gvfs-fuse lm-sensors lshw lsscsi smartmontools galternatives software-properties-gtk gnome-firmware util-linux
 
 sudo apt install -y firmware-linux firmware-misc-nonfree
@@ -14,7 +14,7 @@ sudo apt install -y xorg xserver-xorg ffmpegthumbnailer gstreamer1.0-gl gstreame
 
 sudo apt install -y libdvdnav4 libdvdread8 libfaac0 libmad0 libmp3lame0 libxvidcore4 vorbis-tools flac
 
-sudo apt install -y gcc g++ gfortran clang rustc valac fpc gnat ocaml-nox crystal linux-headers-$(uname -r) build-essential make cmake meson libgcr-3-dev ninja-build cargo autoconf automake libtool scons gradle default-jdk default-jre
+sudo apt install -y gcc g++ gfortran clang rustc valac fpc gnat ocaml-nox crystal linux-headers-$(uname -r) build-essential make cmake meson libgcr-3-dev ninja-build cargo autoconf automake libtool scons default-jdk default-jre
 
 sudo apt install -y papirus-icon-theme arc-theme dmz-cursor-theme adwaita-qt materia-gtk-theme
 
