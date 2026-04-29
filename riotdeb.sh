@@ -4,7 +4,7 @@
 # RIOT.DEB - Script de Instalación Avanzado para Debian
 # =============================================================================
 # Autor: Script Expert
-# Version: 4.0
+# Version: 1.0
 # Descripcion: Instalacion automatizada para Debian (instalacion minima)
 # =============================================================================
 
@@ -59,93 +59,13 @@ print_question() {
     echo -e "${MAGENTA}[?] $1${NC}"
 }
 
-# =============================================================================
-# VERIFICACION DE DEPENDENCIAS ESENCIALES (NUEVO)
-# =============================================================================
-
-check_and_install_dependencies() {
-    print_header "VERIFICANDO DEPENDENCIAS ESENCIALES"
-    
-    local missing_packages=()
-    
-    # Verificar sudo
-    if ! command -v sudo &> /dev/null; then
-        print_warning "sudo no esta instalado"
-        missing_packages+=("sudo")
-    fi
-    
-    # Verificar git
-    if ! command -v git &> /dev/null; then
-        print_warning "git no esta instalado"
-        missing_packages+=("git")
-    fi
-    
-    # Verificar wget
-    if ! command -v wget &> /dev/null; then
-        print_warning "wget no esta instalado"
-        missing_packages+=("wget")
-    fi
-    
-    # Verificar curl
-    if ! command -v curl &> /dev/null; then
-        print_warning "curl no esta instalado"
-        missing_packages+=("curl")
-    fi
-    
-    # Si faltan paquetes, intentar instalarlos
-    if [ ${#missing_packages[@]} -gt 0 ]; then
-        print_info "Instalando paquetes faltantes: ${missing_packages[*]}"
-        
-        # Verificar si podemos usar apt (necesitamos root)
-        if [ "$EUID" -ne 0 ]; then
-            print_warning "Se necesitan permisos de root para instalar dependencias"
-            print_info "Solicitando permisos..."
-            exec su -c "apt update && apt install -y ${missing_packages[*]} && exec bash $0 $*"
-            exit 0
-        fi
-        
-        # Actualizar repositorios
-        apt update -y 2>/dev/null
-        
-        # Instalar paquetes faltantes
-        for pkg in "${missing_packages[@]}"; do
-            print_info "Instalando $pkg..."
-            apt install -y "$pkg"
-        done
-        
-        print_success "Dependencias instaladas correctamente"
-        
-        # Si instalamos sudo, verificar que el usuario esta en el grupo sudo
-        if [[ " ${missing_packages[*]} " =~ "sudo" ]]; then
-            local current_user=$(whoami)
-            if [ "$current_user" != "root" ]; then
-                print_warning "Se ha instalado sudo. Añadiendo usuario al grupo sudo..."
-                usermod -aG sudo "$current_user"
-                print_success "Usuario $current_user añadido al grupo sudo"
-                print_warning "Deberas cerrar sesion y volver a entrar para que surta efecto"
-            fi
-        fi
+check_root() {
+    if [ "$EUID" -eq 0 ]; then 
+        print_warning "Ejecutando como root"
     else
-        print_success "Todas las dependencias estan instaladas"
+        print_success "Ejecutando como usuario normal"
     fi
-    
-    # Verificar que podemos usar sudo (si no somos root)
-    if [ "$EUID" -ne 0 ] && command -v sudo &> /dev/null; then
-        if ! sudo -n true 2>/dev/null; then
-            print_warning "El usuario actual no tiene permisos sudo"
-            print_info "El script necesita permisos para instalar paquetes"
-            print_question "¿Deseas continuar como root? (s/n): "
-            read -r continue_root
-            if [[ "$continue_root" =~ ^[Ss]$ ]]; then
-                print_info "Reiniciando script como root..."
-                exec su -c "bash $0 $*"
-                exit 0
-            else
-                print_error "No se puede continuar sin permisos sudo"
-                exit 1
-            fi
-        fi
-    fi
+    return 0
 }
 
 run_sudo() {
@@ -212,7 +132,8 @@ show_banner() {
     echo "╚═╝  ╚═╝╚═╝ ╚═════╝    ╚═╝   ╚═════╝ ╚══════╝╚═════╝"
     echo -e "${NC}"
     echo -e "${CYAN}${BOLD}          Script de Instalacion Avanzado para Debian${NC}"
-    echo -e "${YELLOW}                     v4.0 - RIOT.DEB${NC}"
+    echo -e "${YELLOW}                     v1.0 - RIOT.DEB${NC}"
+    echo -e "${YELLOW}                 qazlinux - Ángel R. Torrealba Sánchez${NC}"
     echo
 }
 
@@ -400,6 +321,9 @@ install_laptop_specific_packages() {
     fi
 }
 
+# =============================================================================
+# DETECCION E INSTALACION DE NVIDIA (CON OPCION DE SKIP)
+# =============================================================================
 detect_and_install_nvidia() {
     print_header "CONFIGURACION DE NVIDIA"
     
@@ -415,17 +339,14 @@ detect_and_install_nvidia() {
     echo -e "${CYAN}2) Omitir instalacion - lo hare manualmente despues${NC}"
     echo -e "${YELLOW}ADVERTENCIA: La instalacion manual de NVIDIA puede ser compleja.${NC}"
     echo -e "${YELLOW}Se recomienda usar nvidia-detect para identificar el driver correcto.${NC}"
+    echo
     read -p "$(echo -e ${MAGENTA}"Selecciona una opcion [1-2]: "${NC})" nvidia_choice
     
     case $nvidia_choice in
         1)
-            print_info "Instalando nvidia-detect para identificar el driver correcto..."
             safe_install "nvidia-detect"
             safe_install "linux-headers-amd64"
-            
-            print_info "Ejecutando nvidia-detect..."
             run_sudo nvidia-detect
-            
             print_question "¿Instalar el driver recomendado? (s/n): "
             read -r install_driver
             if [[ "$install_driver" =~ ^[Ss]$ ]]; then
@@ -439,9 +360,7 @@ detect_and_install_nvidia() {
             print_info "Omitiendo instalacion automatica de NVIDIA"
             print_warning "Recuerda instalar los drivers manualmente"
             ;;
-        *)
-            print_error "Opcion invalida. Omitiendo."
-            ;;
+        *) print_error "Opcion invalida" ;;
     esac
 }
 
@@ -483,7 +402,7 @@ configure_system() {
 }
 
 # =============================================================================
-# CONFIGURACION DE REPOSITORIOS
+# CONFIGURACION DE REPOSITORIOS (CORREGIDA)
 # =============================================================================
 
 configure_main_repositories() {
@@ -500,18 +419,16 @@ configure_main_repositories() {
     echo -e "${CYAN}1) Libre (main)${NC}"
     echo -e "${CYAN}2) Contrib${NC}"
     echo -e "${CYAN}3) Non-Free${NC}"
-    echo -e "${CYAN}4) Non-Free-Firmware${NC}"
-    echo -e "${CYAN}5) Todo${NC}"
-    echo -e "${GREEN}6) Cancelar${NC}"
+    echo -e "${CYAN}4) Todos (main contrib non-free non-free-firmware)${NC}"
+    echo -e "${GREEN}5) Cancelar${NC}"
     read -p "$(echo -e ${MAGENTA}"Opcion: "${NC})" component_choice
     
     case $component_choice in
         1) components="main" ;;
         2) components="contrib" ;;
         3) components="non-free" ;;
-        4) components="non-free-firmware" ;;
-        5) components="main contrib non-free non-free-firmware" ;;
-        6) return 0 ;;
+        4) components="main contrib non-free non-free-firmware" ;;
+        5) return 0 ;;
         *) print_error "Opcion invalida"; return 1 ;;
     esac
     
@@ -558,36 +475,53 @@ configure_multimedia() {
     read -r install_multimedia
     [[ ! "$install_multimedia" =~ ^[Ss]$ ]] && return 0
     
-    if [ -f "/etc/apt/sources.list.d/dmo.sources" ]; then
+    if [ -f "/etc/apt/sources.list.d/dmo.list" ]; then
         print_warning "Multimedia ya configurado"
         return 0
     fi
     
-    if ! package_installed "deb-multimedia-keyring"; then
-        wget -q https://www.deb-multimedia.org/pool/main/d/deb-multimedia-keyring/deb-multimedia-keyring_2024.9.1_all.deb
-        run_sudo dpkg -i --force-depends deb-multimedia-keyring_2024.9.1_all.deb 2>/dev/null
-        rm -f deb-multimedia-keyring_2024.9.1_all.deb
+    # PASO 1: Asegurar dependencias básicas
+    print_info "Verificando dependencias..."
+    if ! command -v wget &> /dev/null; then
+        run_sudo apt update
+        run_sudo apt install -y wget apt-transport-https
     fi
     
-    cat <<EOF | run_sudo tee /etc/apt/sources.list.d/dmo.sources
-Types: deb deb-src
-URIs: https://www.deb-multimedia.org
-Suites: trixie
-Components: main non-free
-Signed-By: /usr/share/keyrings/deb-multimedia-keyring.pgp
-Enabled: yes
-
-Types: deb deb-src
-URIs: https://www.deb-multimedia.org
-Suites: trixie-backports
-Components: main
-Signed-By: /usr/share/keyrings/deb-multimedia-keyring.pgp
-Enabled: yes
+    # PASO 2: Descargar e instalar keyring
+    print_info "Descargando keyring de deb-multimedia..."
+    wget -q https://www.deb-multimedia.org/pool/main/d/deb-multimedia-keyring/deb-multimedia-keyring_2024.9.1_all.deb -O /tmp/dmm-keyring.deb
+    
+    if [ ! -f /tmp/dmm-keyring.deb ]; then
+        print_error "No se pudo descargar el keyring"
+        return 1
+    fi
+    
+    print_info "Instalando keyring..."
+    run_sudo dpkg -i --force-depends /tmp/dmm-keyring.deb 2>/dev/null
+    rm -f /tmp/dmm-keyring.deb
+    
+    # PASO 3: Verificar instalación del keyring
+    if ! package_installed "deb-multimedia-keyring"; then
+        print_error "No se pudo instalar deb-multimedia-keyring"
+        return 1
+    fi
+    print_success "Keyring instalado correctamente"
+    
+    # PASO 4: Configurar repositorio (usando .list en lugar de .sources por compatibilidad)
+    print_info "Configurando repositorio Multimedia..."
+    cat <<EOF | run_sudo tee /etc/apt/sources.list.d/dmo.list
+deb https://www.deb-multimedia.org trixie main non-free
+deb-src https://www.deb-multimedia.org trixie main non-free
+deb https://www.deb-multimedia.org trixie-backports main
+deb-src https://www.deb-multimedia.org trixie-backports main
 EOF
-    log_added_repo "/etc/apt/sources.list.d/dmo.sources"
-    print_success "Multimedia configurado"
+    
+    # PASO 5: Actualizar repositorios
+    run_sudo apt update
+    
+    print_success "Repositorio Multimedia configurado correctamente"
+    log_added_repo "/etc/apt/sources.list.d/dmo.list"
 }
-
 configure_extrepo() {
     print_question "¿Instalar Extrepo? (s/n): "
     read -r install_extrepo
@@ -679,7 +613,7 @@ cleanup() {
             if [ -f "$ADDED_REPOS_LOG" ]; then
                 print_warning "Repositorios anadidos:"
                 cat "$ADDED_REPOS_LOG"
-                print_question "¿Eliminar todos los repositorios anadidos? (s/n): "
+                print_question "¿Eliminar todos? (s/n): "
                 read -r remove_repos
                 if [[ "$remove_repos" =~ ^[Ss]$ ]]; then
                     while read -r repo; do
@@ -690,14 +624,14 @@ cleanup() {
                     run_sudo apt update
                 fi
             else
-                print_warning "No hay repositorios anadidos registrados"
+                print_warning "No hay repositorios registrados"
             fi
             ;;
         6) show_main_menu; return 0 ;;
         *) print_error "Opcion invalida" ;;
     esac
     
-    print_question "¿Otra operacion de limpieza? (s/n): "
+    print_question "¿Otra operacion? (s/n): "
     read -r continue_cleanup
     [[ "$continue_cleanup" =~ ^[Ss]$ ]] && cleanup || show_main_menu
 }
@@ -731,7 +665,7 @@ show_main_menu() {
 }
 
 # =============================================================================
-# MENU DE APLICACIONES (21 categorias)
+# MENU DE APLICACIONES
 # =============================================================================
 
 install_applications_menu() {
@@ -792,99 +726,6 @@ install_applications_menu() {
 }
 
 # =============================================================================
-# CATEGORIA 20: GESTORES DE DESCARGA
-# =============================================================================
-install_download_managers() {
-    show_banner
-    print_header "GESTORES DE DESCARGA"
-    echo -e "${GREEN}Selecciona los gestores de descarga a instalar:${NC}"
-    echo ""
-    echo -e "${CYAN}== Clientes Torrent ==${NC}"
-    echo -e "${CYAN}1) Transmission (GTK) - Ligero y sencillo${NC}"
-    echo -e "${CYAN}2) qBittorrent (Qt) - Completo, similar a uTorrent${NC}"
-    echo -e "${CYAN}3) Deluge (GTK) - Con plugins, muy configurable${NC}"
-    echo -e "${CYAN}4) Fragments (GTK) - Moderno y minimalista${NC}"
-    echo ""
-    echo -e "${CYAN}== Gestores de Descarga Directa ==${NC}"
-    echo -e "${CYAN}5) uGet (GTK) - Soporta multi-hilos y clipboard monitoring${NC}"
-    echo -e "${CYAN}6) Persepolis (Qt) - Frontend para aria2, similar a IDM${NC}"
-    echo -e "${CYAN}7) Xtreme Download Manager (XDM) - Java, soporta videos${NC}"
-    echo -e "${CYAN}8) Motrix (Electron) - Interfaz moderna, soporta torrent${NC}"
-    echo -e "${CYAN}9) KGet (KDE/Qt) - Integracion con KDE${NC}"
-    echo ""
-    echo -e "${CYAN}10) aria2 (terminal) - Motor de descargas por consola${NC}"
-    echo -e "${CYAN}11) Instalar TODOS los gestores de descarga${NC}"
-    echo -e "${GREEN}12) Volver${NC}"
-    read -p "$(echo -e ${MAGENTA}"Seleccion: "${NC})" -a selected_indices
-    
-    for idx in "${selected_indices[@]}"; do
-        case $idx in
-            1) safe_install "transmission-gtk" ;;
-            2) safe_install "qbittorrent" ;;
-            3) safe_install "deluge-gtk" ;;
-            4) safe_install "fragments" ;;
-            5) safe_install "uget" ;;
-            6)
-                if ! package_installed "persepolis"; then
-                    print_info "Agregando repositorio PPA de Persepolis..."
-                    run_sudo add-apt-repository -y ppa:persepolis/ppa 2>/dev/null
-                    run_sudo apt update
-                    safe_install "persepolis"
-                    log_added_repo "PPA:persepolis/ppa"
-                fi
-                ;;
-            7)
-                if ! package_installed "xdman"; then
-                    print_info "Descargando Xtreme Download Manager..."
-                    wget -q https://github.com/subhra74/xdm/releases/download/2024/xdman_2024_amd64.deb -O /tmp/xdman.deb
-                    run_sudo dpkg -i /tmp/xdman.deb 2>/dev/null || run_sudo apt install -f -y
-                    rm -f /tmp/xdman.deb
-                    print_success "Xtreme Download Manager instalado"
-                    log_installed_package "xdman"
-                fi
-                ;;
-            8)
-                if ! package_installed "motrix"; then
-                    print_info "Descargando Motrix desde GitHub..."
-                    curl -s https://api.github.com/repos/agalwood/Motrix/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | wget -qi -
-                    run_sudo dpkg -i Motrix_*.deb 2>/dev/null || run_sudo apt install -f -y
-                    rm -f Motrix_*.deb
-                    print_success "Motrix instalado"
-                    log_installed_package "motrix"
-                fi
-                ;;
-            9) safe_install "kget" ;;
-            10) safe_install "aria2" ;;
-            11)
-                print_info "Instalando todos los gestores de descarga..."
-                safe_install "transmission-gtk" "qbittorrent" "deluge-gtk" "fragments"
-                safe_install "uget" "kget" "aria2"
-                if ! package_installed "persepolis"; then
-                    run_sudo add-apt-repository -y ppa:persepolis/ppa 2>/dev/null
-                    run_sudo apt update
-                    safe_install "persepolis"
-                fi
-                if ! package_installed "motrix"; then
-                    curl -s https://api.github.com/repos/agalwood/Motrix/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | wget -qi -
-                    run_sudo dpkg -i Motrix_*.deb 2>/dev/null || run_sudo apt install -f -y
-                    rm -f Motrix_*.deb
-                fi
-                if ! package_installed "xdman"; then
-                    wget -q https://github.com/subhra74/xdm/releases/download/2024/xdman_2024_amd64.deb -O /tmp/xdman.deb
-                    run_sudo dpkg -i /tmp/xdman.deb 2>/dev/null || run_sudo apt install -f -y
-                    rm -f /tmp/xdman.deb
-                fi
-                print_success "Todos los gestores de descarga instalados"
-                ;;
-            12) return 0 ;;
-            *) print_warning "Opcion $idx no valida" ;;
-        esac
-    done
-    read -p "Presiona Enter..."
-    install_applications_menu
-}
-
-# =============================================================================
 # CATEGORIA 1: NAVEGADORES WEB
 # =============================================================================
 install_browsers() {
@@ -905,7 +746,6 @@ install_browsers() {
                 if ! package_installed "firefox"; then
                     wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- | run_sudo tee /etc/apt/keyrings/packages.mozilla.org.asc > /dev/null
                     echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | run_sudo tee /etc/apt/sources.list.d/mozilla.list
-                    log_added_repo "/etc/apt/sources.list.d/mozilla.list"
                     run_sudo apt update && safe_install "firefox"
                 fi
                 ;;
@@ -921,7 +761,6 @@ install_browsers() {
                     safe_install "apt-transport-https" && safe_install "gnupg"
                     wget -qO- https://deb.torproject.org/torproject.org/A3C4F0F979CAA22CDBA8F512EE8CBC9E886DDD89.asc | gpg --dearmor | run_sudo tee /usr/share/keyrings/deb.torproject.org-keyring.gpg >/dev/null
                     echo "deb [signed-by=/usr/share/keyrings/deb.torproject.org-keyring.gpg] https://deb.torproject.org/torproject.org trixie main" | run_sudo tee /etc/apt/sources.list.d/tor.list
-                    log_added_repo "/etc/apt/sources.list.d/tor.list"
                     run_sudo apt update && safe_install "tor" && safe_install "torbrowser-launcher"
                 fi
                 ;;
@@ -929,7 +768,6 @@ install_browsers() {
                 if ! package_installed "mullvad-browser"; then
                     run_sudo curl -fsSLo /usr/share/keyrings/mullvad-keyring.asc https://repository.mullvad.net/deb/mullvad-keyring.asc
                     echo "deb [signed-by=/usr/share/keyrings/mullvad-keyring.asc] https://repository.mullvad.net/deb/stable stable main" | run_sudo tee /etc/apt/sources.list.d/mullvad.list
-                    log_added_repo "/etc/apt/sources.list.d/mullvad.list"
                     run_sudo apt update && safe_install "mullvad-browser"
                 fi
                 ;;
@@ -1042,7 +880,6 @@ install_messaging_apps() {
                     safe_install "wget" && safe_install "apt-transport-https"
                     run_sudo wget -O /usr/share/keyrings/element-io-archive-keyring.gpg https://packages.element.io/debian/element-io-archive-keyring.gpg
                     echo "deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg] https://packages.element.io/debian/ default main" | run_sudo tee /etc/apt/sources.list.d/element-io.list
-                    log_added_repo "/etc/apt/sources.list.d/element-io.list"
                     run_sudo apt update && safe_install "element-desktop"
                 fi
                 ;;
@@ -1052,7 +889,6 @@ install_messaging_apps() {
                     safe_install "gnupg" && safe_install "dirmngr" && safe_install "ca-certificates" && safe_install "curl"
                     curl -s https://dl.jami.net/public-key.gpg | run_sudo tee /usr/share/keyrings/jami-archive-keyring.gpg > /dev/null
                     echo "deb [signed-by=/usr/share/keyrings/jami-archive-keyring.gpg] https://dl.jami.net/stable/debian_13/ jami main" | run_sudo tee /etc/apt/sources.list.d/jami.list
-                    log_added_repo "/etc/apt/sources.list.d/jami.list"
                     run_sudo apt update && safe_install "jami"
                 fi
                 ;;
@@ -1061,7 +897,6 @@ install_messaging_apps() {
                 if ! package_installed "session-desktop"; then
                     run_sudo curl -so /usr/share/keyrings/session-foundation.gpg https://deb.session.foundation/pub.gpg
                     echo "deb [signed-by=/usr/share/keyrings/session-foundation.gpg] https://deb.session.foundation $(lsb_release -sc) main" | run_sudo tee /etc/apt/sources.list.d/session.list
-                    log_added_repo "/etc/apt/sources.list.d/session.list"
                     run_sudo apt update && safe_install "session-desktop"
                 fi
                 ;;
@@ -1153,7 +988,6 @@ install_video_apps() {
                     run_sudo wget -O /etc/apt/keyrings/gpg-pub-moritzbunkus.gpg https://mkvtoolnix.download/gpg-pub-moritzbunkus.gpg
                     echo "deb [signed-by=/etc/apt/keyrings/gpg-pub-moritzbunkus.gpg] https://mkvtoolnix.download/debian/ trixie main" | run_sudo tee /etc/apt/sources.list.d/mkvtoolnix.list
                     echo "deb-src [signed-by=/etc/apt/keyrings/gpg-pub-moritzbunkus.gpg] https://mkvtoolnix.download/debian/ trixie main" | run_sudo tee -a /etc/apt/sources.list.d/mkvtoolnix.list
-                    log_added_repo "/etc/apt/sources.list.d/mkvtoolnix.list"
                     run_sudo apt update && safe_install "mkvtoolnix" && safe_install "mkvtoolnix-gui"
                 fi
                 ;;
@@ -1217,7 +1051,7 @@ install_multimedia_tools() {
 }
 
 # =============================================================================
-# CATEGORIA 8: SEGURIDAD Y PRIVACIDAD
+# CATEGORIA 8: SEGURIDAD Y PRIVACIDAD (CON CARBURETOR)
 # =============================================================================
 install_security_apps() {
     show_banner
@@ -1237,7 +1071,8 @@ install_security_apps() {
     echo -e "${CYAN}12) Secrets${NC}"
     echo -e "${CYAN}13) Mat2${NC}"
     echo -e "${CYAN}14) Tomb${NC}"
-    echo -e "${GREEN}15) Volver${NC}"
+    echo -e "${CYAN}15) Carburetor (Proxy Tor system-wide)${NC}"
+    echo -e "${GREEN}16) Volver${NC}"
     read -p "$(echo -e ${MAGENTA}"Seleccion: "${NC})" -a selected_indices
     
     for idx in "${selected_indices[@]}"; do
@@ -1256,7 +1091,8 @@ install_security_apps() {
             12) safe_install "secrets" ;;
             13) safe_install "mat2" ;;
             14) safe_install "tomb" ;;
-            15) return 0 ;;
+            15) safe_install "carburetor" ;;
+            16) return 0 ;;
         esac
     done
     read -p "Presiona Enter..."
@@ -1401,7 +1237,6 @@ install_dev_tools() {
                 if ! package_installed "codium"; then
                     wget -qO - https://gitlab.com/paulcarroty/vscodium-deb-rpm-repo/raw/master/pub.gpg | gpg --dearmor | run_sudo dd of=/usr/share/keyrings/vscodium-archive-keyring.gpg
                     echo "deb [signed-by=/usr/share/keyrings/vscodium-archive-keyring.gpg] https://download.vscodium.com/debs vscodium main" | run_sudo tee /etc/apt/sources.list.d/vscodium.list
-                    log_added_repo "/etc/apt/sources.list.d/vscodium.list"
                     run_sudo apt update && safe_install "codium"
                 fi
                 ;;
@@ -1722,24 +1557,99 @@ install_virtualization() {
 }
 
 # =============================================================================
+# CATEGORIA 20: GESTORES DE DESCARGA
+# =============================================================================
+install_download_managers() {
+    show_banner
+    print_header "GESTORES DE DESCARGA"
+    echo -e "${GREEN}Selecciona:${NC}"
+    echo -e "${CYAN}1) Transmission (GTK)${NC}"
+    echo -e "${CYAN}2) qBittorrent${NC}"
+    echo -e "${CYAN}3) Deluge (GTK)${NC}"
+    echo -e "${CYAN}4) Fragments (GTK)${NC}"
+    echo -e "${CYAN}5) uGet (GTK)${NC}"
+    echo -e "${CYAN}6) Persepolis${NC}"
+    echo -e "${CYAN}7) Xtreme Download Manager${NC}"
+    echo -e "${CYAN}8) Motrix${NC}"
+    echo -e "${CYAN}9) KGet${NC}"
+    echo -e "${CYAN}10) aria2 (terminal)${NC}"
+    echo -e "${CYAN}11) Instalar TODOS${NC}"
+    echo -e "${GREEN}12) Volver${NC}"
+    read -p "$(echo -e ${MAGENTA}"Seleccion: "${NC})" -a selected_indices
+    
+    for idx in "${selected_indices[@]}"; do
+        case $idx in
+            1) safe_install "transmission-gtk" ;;
+            2) safe_install "qbittorrent" ;;
+            3) safe_install "deluge-gtk" ;;
+            4) safe_install "fragments" ;;
+            5) safe_install "uget" ;;
+            6)
+                if ! package_installed "persepolis"; then
+                    run_sudo add-apt-repository -y ppa:persepolis/ppa 2>/dev/null
+                    run_sudo apt update
+                    safe_install "persepolis"
+                fi
+                ;;
+            7)
+                if ! package_installed "xdman"; then
+                    wget -q https://github.com/subhra74/xdm/releases/download/2024/xdman_2024_amd64.deb -O /tmp/xdman.deb
+                    run_sudo dpkg -i /tmp/xdman.deb 2>/dev/null || run_sudo apt install -f -y
+                    rm -f /tmp/xdman.deb
+                    log_installed_package "xdman"
+                fi
+                ;;
+            8)
+                if ! package_installed "motrix"; then
+                    curl -s https://api.github.com/repos/agalwood/Motrix/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | wget -qi -
+                    run_sudo dpkg -i Motrix_*.deb 2>/dev/null || run_sudo apt install -f -y
+                    rm -f Motrix_*.deb
+                    log_installed_package "motrix"
+                fi
+                ;;
+            9) safe_install "kget" ;;
+            10) safe_install "aria2" ;;
+            11)
+                safe_install "transmission-gtk" "qbittorrent" "deluge-gtk" "fragments"
+                safe_install "uget" "kget" "aria2"
+                if ! package_installed "persepolis"; then
+                    run_sudo add-apt-repository -y ppa:persepolis/ppa 2>/dev/null
+                    run_sudo apt update
+                    safe_install "persepolis"
+                fi
+                if ! package_installed "motrix"; then
+                    curl -s https://api.github.com/repos/agalwood/Motrix/releases/latest | grep "browser_download_url.*amd64.deb" | cut -d '"' -f 4 | wget -qi -
+                    run_sudo dpkg -i Motrix_*.deb 2>/dev/null || run_sudo apt install -f -y
+                    rm -f Motrix_*.deb
+                fi
+                if ! package_installed "xdman"; then
+                    wget -q https://github.com/subhra74/xdm/releases/download/2024/xdman_2024_amd64.deb -O /tmp/xdman.deb
+                    run_sudo dpkg -i /tmp/xdman.deb 2>/dev/null || run_sudo apt install -f -y
+                    rm -f /tmp/xdman.deb
+                fi
+                print_success "Todos los gestores instalados"
+                ;;
+            12) return 0 ;;
+        esac
+    done
+    read -p "Presiona Enter..."
+    install_applications_menu
+}
+
+# =============================================================================
 # FUNCION PRINCIPAL
 # =============================================================================
 
 main() {
     show_banner
+    check_root
     
-    # VERIFICAR DEPENDENCIAS PRIMERO
-    check_and_install_dependencies "$@"
-    
-    # Continuar con el resto del script
     if ! grep -qi "debian" /etc/os-release; then
         print_error "Este script es solo para Debian"
         exit 1
     fi
     
-    touch "$LOG_FILE"
-    touch "$INSTALLED_PACKAGES_LOG"
-    touch "$ADDED_REPOS_LOG"
+    touch "$LOG_FILE" "$INSTALLED_PACKAGES_LOG" "$ADDED_REPOS_LOG" 2>/dev/null
     print_success "Log: $LOG_FILE"
     
     check_internet
@@ -1756,5 +1666,4 @@ main() {
     show_main_menu
 }
 
-# Ejecutar script
 main "$@"
